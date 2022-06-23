@@ -14,6 +14,7 @@ from . import bus
 
 REPORT_TIME = 0.300
 CONSECUTIVE_FAULT_LIMIT = 3
+MAX_TEMP_SLOPE = 100. * REPORT_TIME  # 100 deg/s well exceeds normal rates
 
 class SensorBase:
     def __init__(self, config, chip_type, config_cmd=None,
@@ -284,6 +285,7 @@ class MAX31865(SensorBase):
         adc_to_resist = rtd_reference_r / float(MAX31865_ADC_MAX)
         self.adc_to_resist_div_nominal = adc_to_resist / rtd_nominal_r
         self.last_temp = None
+        self.temp_slope_faults = 0
         SensorBase.__init__(self, config, "MAX31865",
                             self.build_spi_init(config))
     def calc_temp(self, adc, fault):
@@ -320,6 +322,24 @@ class MAX31865(SensorBase):
         #  temp = (-b +- sqrt(b**2 - 4ac)) / 2a
         discriminant = math.sqrt(CVD_A**2 - 4. * CVD_B * (1. - R_div_nominal))
         temp = (-CVD_A + discriminant) / (2. * CVD_B)
+
+        # Attempt to handle excessive rate of temperature change:
+        #  This will isolate certain intermittent and/or in-range failures that
+        #  the MAX31865 internal diagnostics may not catch and will prevent
+        #  passing such erroneous temperature to the PID controller.
+        if self.last_temp != None:
+            if abs(temp-self.last_temp) / REPORT_TIME > MAX_TEMP_SLOPE:
+                self.temp_slope_faults += 1
+            else:
+                self.temp_slope_faults = 0
+        if self.temp_slope_faults > CONSECUTIVE_FAULT_LIMIT:
+            fault_msg = "MAX31865: excessive temperature rate of change"
+            logging.warn("{}".format(fault_msg))
+            self.fault("{}".format(fault_msg))
+        # Return last known valid temperature during slope exceedances
+        if self.temp_slope_faults > 0:
+            return self.last_temp
+
         self.last_temp = temp
         return temp
     def calc_adc(self, temp):
