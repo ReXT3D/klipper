@@ -14,7 +14,7 @@ from . import bus
 
 REPORT_TIME = 0.300
 CONSECUTIVE_FAULT_LIMIT = 3
-MAX_TEMP_SLOPE = 100. * REPORT_TIME  # 100 deg/s well exceeds normal rates
+MAX_TEMP_SLOPE = 100.  # 100 deg/s well exceeds normal heating rates
 
 class SensorBase:
     def __init__(self, config, chip_type, config_cmd=None,
